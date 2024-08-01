@@ -1,0 +1,39 @@
+* {
+    font-family: "Hind", sans-serif;
+}
+
+article {
+    font-size: larger;
+}
+
+.global-links {
+    font-size: larger;
+}
+
+.global-links h5 {
+    font-weight: bold;
+}
+
+.global-links a {
+    text-decoration: none;
+    color: #3F3682;
+    font-weight: 600;
+}
+
+.global-links ul {
+    list-style: none;
+}
+
+:root,
+.pagination {
+    --theme-primary-color: #3F3682;
+    --bs-link-color: var(--theme-primary-color) !important;
+    --bs-link-hover-color: var(--theme-primary-color) !important;
+    --bs-pagination-active-bg: var(--theme-primary-color) !important;
+    --bs-pagination-active-border-color: var(--theme-primary-color) !important;
+}
+
+code {
+    font-size: 1.1rem !important;
+    white-space: pre-wrap;
+}

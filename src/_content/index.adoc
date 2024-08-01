@@ -1,0 +1,5 @@
+= Hello
+:view: redirect
+:redirect: /blog/1.html
+:index-skip: true
+:rss-skip: true

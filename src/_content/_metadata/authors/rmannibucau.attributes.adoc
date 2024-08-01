@@ -1,0 +1,6 @@
+:author: rmannibucau
+:author-description: Tech Lead/Software Architect, Apache Software committer, Java/Js/.NET guy
+:author-displayName: Romain Manni-Bucau
+:author-twitter: rmannibucau
+:author-linkedin: rmannibucau
+:author-github: rmannibucau

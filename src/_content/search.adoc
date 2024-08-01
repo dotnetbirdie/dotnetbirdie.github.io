@@ -1,0 +1,4 @@
+= Searching...
+:view: search
+:index-skip: true
+:rss-skip: true

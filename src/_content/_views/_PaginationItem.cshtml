@@ -1,0 +1,18 @@
+@if (Model.Current)
+{
+    <li class="page-item active" aria-current="page">
+        <a href="@(Model.Page).html" class="page-link">
+            <span class="screen-reader-text-pagination">Page</span>
+            @Model.Page
+        </a>
+    </li>
+}
+else
+{
+    <li class="page-item">
+        <a href="@(Model.Page).html" class="page-link">
+            <span class="screen-reader-text-pagination">Page</span>
+            @Model.Page
+        </a>
+    </li>
+}

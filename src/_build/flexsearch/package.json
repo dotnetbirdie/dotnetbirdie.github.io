@@ -1,0 +1,14 @@
+{
+  "name": "dotnetbidrie",
+  "version": "1.0.0",
+  "description": "Pre-index flexsearch to avoid to keep the body in the indexed payload",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "flexsearch": "^0.7.43"
+  }
+}

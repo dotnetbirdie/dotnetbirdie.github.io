@@ -1,0 +1,21 @@
+@{
+    Layout = "_Layout";
+}
+@section Styles {
+    <link rel="stylesheet" href="/css/spinner.css?v=1" />
+}
+
+<div id="search-results" class="container pt-2">
+    <div class="spinner-container d-flex justify-content-center" style="height: 200px;">
+        <div class="spinner">
+            <div class="spinner-text">Searching...</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FlexSearch/0.7.31/flexsearch.bundle.min.js"
+        integrity="sha512-og4pa0SSx4shpSkHdq0Hb8Jqc5CbShp2qr3wkcp8GQqW4BzQrM3tQrd9qnd/gofzZ8+zkXSD6SxFo74aKG3rGQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="/js/search.js?v=1"></script>
+}

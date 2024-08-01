@@ -1,0 +1,98 @@
+{
+    "sbsharp": {
+        "Input": {
+            "Location": "src/_content",
+            "Sources": {
+                "Excludes": [
+                    "**/*.partial.adoc",
+                    "**/*.attributes.adoc"
+                ]
+            },
+            "View": "_views",
+            "AssetsLocation": "_assets",
+            "Assets": {
+                "Includes": [
+                    "**/*.svg",
+                    "**/*.png",
+                    "**/*.ico",
+                    "**/*.css",
+                    "**/*.js",
+                    "**/*.webmanifest"
+                ]
+            },
+            "VirtualPages": [
+                {
+                    "Slug": "blog/{Page}",
+                    "Title": "Posts, page {Page}",
+                    "View": "post.index",
+                    "Paginated": true,
+                    "PerValue": false,
+                    "CriteriaAttribute": "published-on",
+                    "OrderByAttribute": "published-on",
+                    "ReverseOrderBy": true
+                },
+                {
+                    "Slug": "blog/author/{Value}/{Page}",
+                    "Title": "Posts of {Value}, page {Page}",
+                    "View": "post.index",
+                    "Paginated": true,
+                    "PerValue": true,
+                    "CriteriaAttribute": "author",
+                    "OrderByAttribute": "published-on",
+                    "ReverseOrderBy": true
+                },
+                {
+                    "Slug": "blog/tag/{Value}/{Page}",
+                    "Title": "Posts tagged {Value}, page {Page}",
+                    "View": "post.index",
+                    "Paginated": true,
+                    "PerValue": true,
+                    "CriteriaAttribute": "tags",
+                    "OrderByAttribute": "published-on",
+                    "ReverseOrderBy": true
+                },
+                {
+                    "Slug": "blog/archives/{Value}/{Page}",
+                    "Title": "Posts published on the {Value}, page {Page}",
+                    "View": "post.index",
+                    "Paginated": true,
+                    "PerValue": true,
+                    "CriteriaAttribute": "archive-date",
+                    "OrderByAttribute": "published-on",
+                    "ReverseOrderBy": true
+                }
+            ]
+        },
+        "Output": {
+            "Location": "_site",
+            "Attributes": {
+                "data-uri": ""
+            },
+            "Rss": {
+                "Enabled": true,
+                "Location": "rss.xml",
+                "Title": ".NET Birdie",
+                "Description": "A .NET blog by rmannibucau",
+                "Copyright": "rmannibucau",
+                "Link": "https://dotnetbirdie.github.io",
+                "Ttl": "1440"
+            },
+            "Index": {
+                "Enabled": true,
+                "Location": "flexsearch.index.json",
+                "IndexedAttributes": [
+                    "index-title",
+                    "index-description",
+                    "index-body",
+                    "index-publishedon",
+                    "index-gravatar",
+                    "summary",
+                    "author",
+                    "author-displayName",
+                    "tags",
+                    "post-image"
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,146 @@
+@{
+    Layout = "_Layout";
+}
+
+@{
+    var attributes = Model.Document.Header.Attributes;
+
+    var tags = attributes.TryGetValue("tags", out string tagValues) ?
+    tagValues.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) :
+    Array.Empty<string>();
+
+    var author = attributes["author"];
+    var authorDisplayName = attributes.TryGetValue("author-displayName", out string dn) ? dn : author;
+    var authorDescription = attributes.TryGetValue("author-description", out string ad) ? ad : "";
+    var twitter = attributes.TryGetValue("author-twitter", out string tn) ? tn : "";
+    var github = attributes.TryGetValue("author-github", out string gn) ? gn : "";
+    var linkedin = attributes.TryGetValue("author-linkedin", out string ln) ? ln : "";
+}
+<div>
+    <div style="background-color: white;border-radius: 4px;">
+        <article class="p-4">
+            <h1 style="text-align: center;font-size: 1.8rem;">@Model.Document.Header.Title</h1>
+            <div class="row justify-content-center text-center">
+                <img width="48" height="48" src="@(Model.Gravatar)&s=48" class="w-auto card-img-top p-0"
+                    alt="@(attributes["author"])" style="border-radius: 24px;">
+                <a href="/blog/author/@author/1.html" style="color: #005da6;font-weight: 600;text-decoration: none;" class="pt-2">@authorDisplayName</a>
+            </div>
+            <div class="text-center">
+                <hr style="max-width: 200px;" class="pt-3 mb-0 ms-auto me-auto" />
+                <p>@Model.PublishedOn</p>
+            </div>
+            @if (tags.Length > 0)
+            {
+                <div class="row justify-content-center text-center">
+                    <div style="max-width: 360px;">
+                        @foreach (var tag in tags)
+                        {
+                            <a href="/blog/tag/@tag/1.html" style="background-color: #f2f2f2;color: #005da6;font-size: 14px;text-decoration: none;"
+                                class="p-2 pt-1 pb-1">@tag</a>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="pb-4"></div>
+            <div class="pt-4 pb-4">
+                @Raw(Model.Body())
+            </div>
+
+            <hr />
+            <div class="pt-4 pb-4">
+                <div class="d-flex flex-row">
+                    <img width="64" height="64" src="@(Model.Gravatar)&s=64" class="w-auto card-img-top p-0 me-4"
+                        alt="@(attributes["author"])" style="border-radius: 32px;">
+                    <div>
+                        <div>
+                            <a href="/blog/author/@author/1.html"
+                                style="color: #005da6;font-weight: 600;text-decoration: none;">@authorDisplayName</a>
+                        </div>
+                        <div>
+                            @authorDescription
+                        </div>
+
+                        @if (twitter.Length > 0 || linkedin.Length > 0 || github.Length > 0)
+                        {
+                            <div>
+                                <p class="authorinfo-social-links">
+                                    <span>Follow </span>
+                                    @if (twitter.Length > 0)
+                                    {
+                                        <a class="no-underline" title="Twitter"
+                                            aria-label="Twitter profile"
+                                            target="_blank" href="https://www.twitter.com/@twitter">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" class="s-twitter-x"
+                                                fill="#666" viewBox="0 0 512 512">
+                                                <title>Twitter/X</title>
+                                                <path
+                                                    d="M389.2 48h70.6L305.6 224.2 487 464H345L233.7 318.6 106.5 464H35.8L200.7 275.5 26.8 48H172.4L272.9 180.9 389.2 48zM364.4 421.8h39.1L151.1 88h-42L364.4 421.8z">
+                                                </path>
+                                            </svg>
+                                        </a>
+                                    }
+                                    @if (linkedin.Length > 0)
+                                    {
+                                        <a class="no-underline" title="Linkedin"
+                                            aria-label="Linkedin profile" target="_blank"
+                                            href="https://www.linkedin.com/in/@linkedin">                                            
+                                            <svg viewBox="0 0 72 72"width="18" height="18" class="s-linkedin-x" xmlns="http://www.w3.org/2000/svg">
+                                                <title>LinkedIn</title>
+                                                <g fill="none" fill-rule="evenodd">
+                                                    <path d="M8,72 L64,72 C68.418278,72 72,68.418278 72,64 L72,8 C72,3.581722 68.418278,-8.11624501e-16 64,0 L8,0 C3.581722,8.11624501e-16 -5.41083001e-16,3.581722 0,8 L0,64 C5.41083001e-16,68.418278 3.581722,72 8,72 Z" fill="#007EBB"/><path d="M62,62 L51.315625,62 L51.315625,43.8021149 C51.315625,38.8127542 49.4197917,36.0245323 45.4707031,36.0245323 C41.1746094,36.0245323 38.9300781,38.9261103 38.9300781,43.8021149 L38.9300781,62 L28.6333333,62 L28.6333333,27.3333333 L38.9300781,27.3333333 L38.9300781,32.0029283 C38.9300781,32.0029283 42.0260417,26.2742151 49.3825521,26.2742151 C56.7356771,26.2742151 62,30.7644705 62,40.051212 L62,62 Z M16.349349,22.7940133 C12.8420573,22.7940133 10,19.9296567 10,16.3970067 C10,12.8643566 12.8420573,10 16.349349,10 C19.8566406,10 22.6970052,12.8643566 22.6970052,16.3970067 C22.6970052,19.9296567 19.8566406,22.7940133 16.349349,22.7940133 Z M11.0325521,62 L21.769401,62 L21.769401,27.3333333 L11.0325521,27.3333333 L11.0325521,62 Z" fill="#FFF"/>
+                                                </g>
+                                            </svg>
+                                        </a>
+                                    }
+                                    @if (github.Length > 0)
+                                    {
+                                        <a class="no-underline" title="Github" data-bi-id="author follow within post"
+                                            data-bi-area="" data-bi-name="git_profile_url"
+                                            aria-label="Github profile" target="_blank"
+                                            href="https://github.com/@github">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                                class="navbar-nav-svg" viewBox="0 0 512 499.36" role="img">
+                                                <title>GitHub</title>
+                                                <path fill="#666" fill-rule="evenodd"
+                                                    d="M256 0C114.64 0 0 114.61 0 256c0 113.09 73.34 209 175.08 242.9 12.8 2.35 17.47-5.56 17.47-12.34 0-6.08-.22-22.18-.35-43.54-71.2 15.49-86.2-34.34-86.2-34.34-11.64-29.57-28.42-37.45-28.42-37.45-23.27-15.84 1.73-15.55 1.73-15.55 25.69 1.81 39.21 26.38 39.21 26.38 22.84 39.12 59.92 27.82 74.5 21.27 2.33-16.54 8.94-27.82 16.25-34.22-56.84-6.43-116.6-28.43-116.6-126.49 0-27.95 10-50.8 26.35-68.69-2.63-6.48-11.42-32.5 2.51-67.75 0 0 21.49-6.88 70.4 26.24a242.65 242.65 0 0 1 128.18 0c48.87-33.13 70.33-26.24 70.33-26.24 14 35.25 5.18 61.27 2.55 67.75 16.41 17.9 26.31 40.75 26.31 68.69 0 98.35-59.85 120-116.88 126.32 9.19 7.9 17.38 23.53 17.38 47.41 0 34.22-.31 61.83-.31 70.23 0 6.85 4.61 14.81 17.6 12.31C438.72 464.97 512 369.08 512 256.02 512 114.62 397.37 0 256 0z">
+                                                </path>
+                                            </svg>
+                                        </a>
+                                    }
+                                </p>
+
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (tags.Length > 0)
+            {
+
+                <hr />
+                <div class="pt-4">
+                    <span>Tags</span>
+                    @foreach (var tag in tags)
+                    {
+                        <a href="/blog/tag/@tag/1.html" style="background-color: #f2f2f2;color: #005da6;text-decoration: none;"
+                            class="me-2 p-2 pt-1 pb-1">@tag</a>
+                    }
+                </div>
+            }
+        </article>
+    </div>
+    <!-- if read next
+    <div class="pt-4">
+        <h3>Read next</h3>
+        <div class="row">
+            <div class="col-md-6">
+                card as on index (do a component)
+            </div>
+        </div>
+    </div>
+    -->
+    <div class="pb-4"></div>
+
+</div>

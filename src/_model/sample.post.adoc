@@ -1,0 +1,19 @@
+= Test
+:published-on: 20240729
+:archive-date: 2024/07
+:summary: A post to display on the front page test.
+:view: post.single
+:tags: Tag 1,Tag 2
+include::_metadata/authors/rmannibucau.attributes.adoc[]
+
+blabla ici romain
+
+[source,csharp]
+----
+namespace Auth;
+
+public class USer
+{
+    public string Name { get; init; };
+}
+----
