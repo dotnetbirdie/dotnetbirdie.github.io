@@ -2,3 +2,4 @@ _site
 *partial*
 *generated*
 node_modules
+.vscode

@@ -34,8 +34,8 @@
     <!-- todo: link rel="alternate" type="application/rss+xml" title=".NETBirdie RSS Feed"
         href="https://dotnetbirdie.github.io/blog/rss.xml" /-->
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/vs2015.min.css"
-        integrity="sha512-mtXspRdOWHCYp+f4c7CkWGYPPRAhq9X+xCvJMUBVAb6pqA4U8pxhT3RWT3LP3bKbiolYL2CkL1bSKZZO4eeTew=="
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/vs.min.css"
+        integrity="sha512-AVoZ71dJLtHRlsgWwujPT1hk2zxtFWsPlpTPCc/1g0WgpbmlzkqlDFduAvnOV4JJWKUquPc1ZyMc5eq4fRnKOQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
         integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
@@ -60,7 +60,8 @@
                     <div class="navbar-collapse collapse" id="navbartoggle">
                         <span class="me-auto mb-2 mb-sm-0"></span>
                         <form class="mt-sm-6" method="GET" action="/search.html">
-                            <input id="global-search-input" class="form-control" type="text" placeholder="Search" aria-label="Search" name="q">
+                            <input id="global-search-input" class="form-control" type="text" placeholder="Search"
+                                aria-label="Search" name="q">
                         </form>
                         <div class="text-end d-flex justify-content-center">
                             <ul class="navbar-nav flex-row flex-wrap">
@@ -131,13 +132,7 @@
                                 .Where(it => it.Document.Header.Attributes.ContainsKey("archive-date"))
                                 .Select(it => it.Document.Header.Attributes["archive-date"])
                                 .Distinct()
-                                .Select(archive =>
-                                {
-                                    var sep = archive.IndexOf('/');
-                                    var label = new DateOnly(int.Parse(archive[0..sep]), int.Parse(archive[(sep + 1)..]),
-                                                    1).ToString("MMMM yyyy");
-                                    return (Slug: archive, Label: label);
-                                })
+                                .Select(archive => (Slug: archive, Label: archive))
                                 .ToList();
                                 <ul class="ftr-archives" role="list">
                                     @foreach (var archive in archives)
