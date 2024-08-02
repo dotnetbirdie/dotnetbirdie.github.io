@@ -1,0 +1,186 @@
+= System.Text.Json in trimming/AOT mode with custom JsonSerializerOptions
+:published-on: 20240801
+:archive-date: 2024
+:summary: How to use System.Text.Json with trimming/AOT mode and still pass JsonSerializerOptions to customize the naming policy, ignore condition etc...
+:view: post.single
+:tags: JSON, .NET, AOT
+include::_metadata/authors/rmannibucau.attributes.adoc[]
+
+[abstract]
+`System.Text.Json` is a great extension to .NET which enables to very easily handle any JSON deserialization/serialization.
+Since being light and efficient is more and more important, it is trimming/AOT friendly.
+However, this AOT feature comes at the cost to take care of the API you use - _there is no free lunch_ as usual.
+One impact is that the `JsonSerializerOptions` you were using without the AOT mode can not find their place naturally.
+Let see how to solve it.
+
+== System.Text.Json
+
+This post is not about the `System.Text.Json` API but as a quick reminder the API is focused on `JsonSerializer` class which provides a set of static methods to serialize...and deserialize (something probably went wrong with the naming but the API works great so it is not a big deal).
+
+A common, _standard_, usage looks like:
+
+[source,cs]
+----
+var user = new User <1>
+{
+  Name = "rmannibucau"
+};
+string jsonString = JsonSerializer.Serialize(weatherForecast); <2>
+----
+<.> Create the model instance you need,
+<.> Serialize the model to a JSON string.
+
+Indeed, there are API for streams/readers/writers/spans/...
+
+TIP: if you come from another library you can wonder where the model cache belongs. This small little caching addition which makes the whole process fast at runtime. The answer is that without much parameter - in particular an explicit `JsonSerializerOptions` - or more generally `JsonSerializerContext` - you inherit from a default shared one (`JsonSerializerOptions.Default`).
+So no worry, the implementation is fast but the cache is not in the serializer/mapper but in another instance which is the context/options there.
+It means that if you want a cache with a lifetime you control you can explicit it in `DeSerialize` or `Deserialize` methods.
+
+== JsonSerializerOptions in _standard_ mode
+
+We just saw that the `JsonSerializerOptions` enables to provide a model metadata cache to the `JsonSerializer`, but it is way more, it is actually all the deserialization/serialization configuration which is owned by the instance you use.
+
+You can review all the option on the link:https://learn.microsoft.com/fr-fr/dotnet/api/system.text.json.jsonserializeroptions?view=net-8.0[system.text.json.jsonserializeroptions,window=_blank] API documentation but the most useful are:
+
+* `DefaultIgnoreCondition` which enables to ignore null value when serialization a model,
+* `PropertyNamingPolicy` which enables to switch to another convention for JSON attribute naming - like `CamelCase` which is the industry standard in most languages,
+* `WriteIndented` which enables to prettify the JSON when serializing a model.
+
+To explicit it, just add it to the `JsonSerializer` methods:
+
+[source,cs]
+----
+string jsonString = JsonSerializer.Serialize(weatherForecast, myOptions);
+----
+
+IMPORTANT: as mentionned earlier, it is very important to keep reusing the same `myOptions` instance over and over so don't instantiate it inline.
+
+== AOT/Trimming mode
+
+So far so good, so what is the issue with AOT/Trimming mode?
+
+Actually the AOT mode is not really an AOT mode but more - as often - a source generator based mode where all the reflection and runtime is computed at build time using generated sources compiled with your project.
+
+To enable it you need an explicit and custom `JsonSerializerContext`.
+
+To do that you have to declare a custom partial `JsonSerializerContext`:
+
+[source,cs]
+----
+public partial class MyJsonContext : JsonSerializerContext { }
+----
+
+Then you can declare most of the `JsonSerializerOptions` using `JsonSourceGenerationOptions` attribute:
+
+[source,cs]
+----
+[JsonSourceGenerationOptions(
+    WriteIndented = true, <1>
+    GenerationMode = JsonSourceGenerationMode.Default <2>
+)]
+public partial class MyJsonContext : JsonSerializerContext { }
+----
+<.> Prettify the JSON outputs,
+<.> Specific to the source generator what to generate, `Default` is generally what you want but you can request to only generate the type metadata *or* the serialization (codec actually) components.
+
+TIP: starting from .NET 8, you can "disable" the reflection based JSON methods by adding in your project (`.csproj`) to the `PropertyGroup` block the value `<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>`.
+This is highly recommended to avoid programming errors which would break the trimming later one.
+
+Now we have a context we need to add the types we want to support - to let the source generator handle them.
+To do that, just mark them on the custom context with the attribute `JsonSerializable`:
+
+[source,cs]
+----
+[JsonSerializable(typeof(User))]
+[JsonSerializable(typeof(Post))]
+public partial class MyJsonContext : JsonSerializerContext { }
+----
+
+TIP: if you are interested to see what the source generator does you can enable to dump the generated files. Add to your project the following properties in a `PropertyGroup`: `<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>` and optionally `<CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)/Generated</CompilerGeneratedFilesOutputPath>`.
+
+Now we have a custom context we need to explicit it in the `JsonSerializer` API and even a bit more since we want to avoid reflection so we also need to pass the resolved type metadata.
+Similarly to the built-in `Default` context, your custom context got a `Default` singleton you can use until you need something more specific.
+
+Here again there are numerous API but it often looks like:
+
+[source,cs]
+----
+var json = JsonSerializer.Serialize(
+  myUser,
+  MyJsonContext
+    .Default <1>
+    .User <2>
+);
+----
+<.> The default singleton of the custom context we defined,
+<.> We target `User` type from this context.
+
+== Custom options in AOT
+
+Until there it looks very good but if you don't customize your custom context - think to the naming policy for example, then you are kind of blocked and have to create another context definition.
+
+Indeed, at the end we will have two instances so the cache will not be shared - without hacks - but when this is what we want, or when we don't want to couple the source generation to the JSON model and keep the _standard_ programming model where the options are configured in another code location then it is an issue.
+
+A common desired customization to have a "clean" and interoperable JSON looks like:
+
+[source,cs]
+----
+new JsonSerializerOptions
+{
+  Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+  DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+  PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+}
+----
+
+The static mode would look like:
+
+[source,cs]
+----
+[JsonSourceGenerationOptions(
+    GenerationMode = JsonSourceGenerationMode.Default,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase
+    // ?? Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping ??
+)]
+public partial class MyJsonContext : JsonSerializerContext { }
+----
+
+However, since we decided to configure it at runtime we can't rely on that - it is common when part of it is set from some user configuration/environment variables for example.
+Another issue is that all these properties don't exist in all releases of `System.Text.Json`, for example the `Encoder` property is not there in `8.0.4` - this is why it is a comment.
+
+But luckily we are not blocked since the JSON context can take a `JsonSerializerOptions` constructor parameter.
+The common advice is to bind the custom context as a singleton in your IoC to be able to use in all your code.
+
+Here is how to create the custom instance:
+
+[source,cs]
+----
+var myContext = new MyJsonContext(
+  new JsonSerializerOptions
+  {
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+  }
+);
+----
+
+Then just replace `Default` singleton usage by your custom instance:
+
+[source,cs]
+----
+var json = JsonSerializer.Serialize(
+  myUser,
+  myContext.User
+);
+----
+
+== Conclusion
+
+At the cost of listing explicitly the classes you want to serialize/deserialize, you can optimize the JSON serialization/deserialization in your .NET applications using the standard `System.Text.Json` library.
+
+In this post we saw how to tune these optimizations at runtime customizing the default context generated and using a custom instance.
+
+This trick - you can also use for short live/one shot usage throwing away your context once used - will enable you to handle most cases you can encounter and increase the interoperability with 3rd party systems which are not always able to consume the default JSON .NET issue - even if valid.
+
