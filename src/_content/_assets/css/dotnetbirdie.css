@@ -2,6 +2,10 @@
     font-family: "Hind", sans-serif;
 }
 
+h2 {
+    padding-top: 1rem;
+}
+
 article {
     font-size: larger;
 }
@@ -36,4 +40,60 @@ article {
 code {
     font-size: 1.1rem !important;
     white-space: pre-wrap;
+}
+
+/* callouts */
+div.colist.arabic ol {
+    counter-reset: item;
+    list-style-type: none;
+    padding-left: 0;
+}
+
+div.colist.arabic ol>li {
+    counter-increment: item;
+    position: relative;
+    padding-left: 25px;
+}
+
+div.colist.arabic ol>li::before {
+    content: "(" counter(item) ") ";
+    position: absolute;
+    left: 0;
+    font-weight: 500;
+}
+
+/* code border */
+pre {
+    border: 2px solid #3F3682;
+    border-radius: 1rem;
+    box-shadow: 4px 4px 4px #3F3682;
+}
+
+/* inline code styling override */
+p > code {
+    --bs-code-color: black;
+    font-weight: bold;
+    font-style: italic;
+}
+
+/* alert inline code color/style overrides */
+div.alert div.paragraph > p > code {
+    /* there bold+italic would be pretty much not readable */
+    font-weight: normal;
+    font-style: normal;
+}
+div.alert.alert-success div.paragraph > p > code {
+    color: var(--bs-success);
+}
+div.alert.alert-primary div.paragraph > p > code {
+    color: var(--bs-primary);
+}
+div.alert.alert-danger div.paragraph > p > code {
+    color: var(--bs-danger);
+}
+div.alert.alert-warning div.paragraph > p > code {
+    color: var(--bs-warning);
+}
+div.alert.alert-info div.paragraph > p > code {
+    color: var(--bs-info);
 }
