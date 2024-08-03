@@ -27,7 +27,6 @@ function preHighlight(file) {
     const suffix = '</code></pre>';
     const langAttr = 'data-lang="';
     let from = 0;
-    let i = 0;
     while (true) {
         const preStart = content.indexOf(prefix, from);
         let nextBlock = preStart;
@@ -51,7 +50,7 @@ function preHighlight(file) {
         if (lang > 0 && lang < end && lang > preStart) {
             opts.language = content.substring(lang + langAttr.length, content.indexOf('"', lang + langAttr.length + 1));
         }
-        fs.writeFileSync('/tmp/output/' + (i++) + '.html', content);
+
         const code = content.substring(nextBlock, end);
         const highlighted = (!opts.language ? hljs.highlightAuto(code) : hljs.highlight(code, opts)).value;
         content = `${content.substring(0, nextBlock)}${highlighted}${content.substring(end)}`;
