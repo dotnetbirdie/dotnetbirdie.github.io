@@ -78,4 +78,8 @@ function visit(dir, ...excluded) {
     }
 }
 
+hljs.configure({
+    ignoreUnescapedHTML: true,
+});
+
 visit(sources, 'blog', 'index.html', 'search.html');
