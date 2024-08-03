@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 22
       - run: cd src/_build; for module in flexsearch highlight; do cd $module && npm i && cd -; done
-      - run: dotnet tool install --global SBSharp.Launcher --version 0.0.19
+      - run: dotnet tool install --global SBSharp.Launcher --version 0.0.20
       - run: sbsharp build
       # upload to github-pages the content
       - name: Upload artifact
