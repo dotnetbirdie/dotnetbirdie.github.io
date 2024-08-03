@@ -1,7 +1,7 @@
 {
   "name": "dotnetbidrie",
   "version": "1.0.0",
-  "description": "Pre-index flexsearch to avoid to keep the body in the indexed payload",
+  "description": "Pre-highlight code blocks",
   "main": "index.mjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -9,6 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "flexsearch": "^0.7.43"
+    "highlight.js": "^11.10.0"
   }
 }

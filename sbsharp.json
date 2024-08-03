@@ -93,6 +93,26 @@
                     "post-image"
                 ]
             }
-        }
+        },
+        "PostProcessing": [
+            {
+                "Command": [
+                    "node",
+                    "index.mjs"
+                ],
+                "Environment": [],
+                "WorkDir": "../_build/flexsearch",
+                "LogMessage": "Pre-indexing flexsearch.index.json"
+            },
+            {
+                "Command": [
+                    "node",
+                    "index.mjs"
+                ],
+                "Environment": [],
+                "WorkDir": "../_build/highlight",
+                "LogMessage": "Pre-highlighting code blocks"
+            }
+        ]
     }
 }
