@@ -45,6 +45,9 @@ function preHighlight(file) {
             throw new Error(`Invalid block: ${file}`);
         }
         const lang = content.lastIndexOf(langAttr, nextBlock);
+        if (lang === 'nohighlight') {
+            from = end + 1;
+        }
 
         const opts = { ignoreIllegals: true };
         if (lang > 0 && lang < end && lang > preStart) {
@@ -52,13 +55,22 @@ function preHighlight(file) {
         }
 
         const code = content.substring(nextBlock, end);
-        const highlighted = (!opts.language ? hljs.highlightAuto(code) : hljs.highlight(code, opts))
+        const rawHighlighted = (!opts.language ? hljs.highlightAuto(code) : hljs.highlight(code, opts))
             .value
-            .replaceAll(
-                /&lt;b class=&quot;conum&quot;&gt;\((\d+)\)&lt;\/b&gt;/g,
+            // revert escapeHtml since we are in a pre block - needed cause outside the dom in terms of highlight.js API, dom wired API knows it
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#x27;/g, '\'');
+        console.log(rawHighlighted)
+        const highlighted = rawHighlighted
+            // conum were escaped - see next replaces - so just get them back
+            .replace(
+                /<b class=<span class="hljs-string">"conum"<\/span>>\((\d+)\)<\/b>/g,
                 '<b class="conum">($1)</b>')
-            .replaceAll(
-                /&lt;b <span class="hljs-keyword">class<\/span>=<span class="hljs-string">&quot;conum&quot;<\/span>&gt;\(<span class="hljs-number">(\d+)<\/span>\)&lt;\/b&gt;/g,
+            .replace(
+                /<b <span class="hljs-keyword">class<\/span>=<span class="hljs-string">"conum"<\/span>>\(<span class="hljs-number">(\d+)<\/span>\)<\/b>/g,
                 '<b class="conum">($1)</b>');
         content = `${content.substring(0, nextBlock)}${highlighted}${content.substring(end)}`;
         from = nextBlock + highlighted.length + suffix.length + 1;

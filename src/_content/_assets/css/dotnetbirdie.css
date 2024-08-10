@@ -76,6 +76,11 @@ p > code {
     font-style: italic;
 }
 
+/* conum color does not depend if nested in a span or not */
+b.conum {
+    color: black;
+}
+
 /* alert inline code color/style overrides */
 div.alert div.paragraph > p > code {
     /* there bold+italic would be pretty much not readable */
