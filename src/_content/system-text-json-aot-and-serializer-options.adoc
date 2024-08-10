@@ -4,6 +4,7 @@
 :summary: How to use System.Text.Json with trimming/AOT mode and still pass JsonSerializerOptions to customize the naming policy, ignore condition etc...
 :view: post.single
 :tags: JSON, .NET, AOT
+:post-image: /img/posts/system-text-json-aot-and-serializer-options.png
 include::_metadata/authors/rmannibucau.attributes.adoc[]
 
 [abstract]

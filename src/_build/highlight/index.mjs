@@ -63,7 +63,6 @@ function preHighlight(file) {
             .replace(/&gt;/g, '>')
             .replace(/&quot;/g, '"')
             .replace(/&#x27;/g, '\'');
-        console.log(rawHighlighted)
         const highlighted = rawHighlighted
             // conum were escaped - see next replaces - so just get them back
             .replace(
