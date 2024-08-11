@@ -1,0 +1,331 @@
+= OpenTelemetry Metrics and Kubernetes Challenges
+:published-on: 20240814
+:archive-date: 2024
+:summary: How to use .NET OpenTelemetry metrics package and which challenges to solve to integrate within Kubernetes.
+:view: post.single
+:tags: JSON, .NET, Kubernetes, OpenTelemetry, Kubernetes
+include::_metadata/authors/rmannibucau.attributes.adoc[]
+
+//:post-image: /img/posts/system-text-json-aot-and-serializer-options.{view}
+
+[abstract]
+We deploy almost all our application within Kubernetes today but the ecosystem is not always mature.
+Let take OpenTelemetry metrics example within this post.
+
+== Observability need
+
+Kubernetes solves most of the resource scheduling and deployment issues we can face but it also means the applications must be more resilient and monitored than on premise or a fully manual and static installation - but keep in mind the win is still way more than what you loose in general.
+
+In such a context, it is crucial to ensure Kubernetes and your application can communicate in terms of state (is the application up and able to serve requests for example).
+
+It is also key to know what the application is doing and be able to check it or when it turned bad, check what happent.
+
+The solution to these points is to have a good [.line-through]#monitoring# *observability* stack.
+
+What is called observability is mainly composed of three pillars:
+
+* The *logs*: the application logs should be configured at the right level and aggregated properly for a simple and efficient search,
+* The *metrics*: often converted in time series, it gives the figures of the application usage (number of request per second, CPU usage, ...),
+* The *traces*: we often called it "transactions" before Zipkin time, it is the chain of calls related to a single trigger (often an end user action). A typical example is that the user calls the `/contract/find` endpoint which calls the `admin` service which calls the `security` service which calls the database before call the `contract` service for example.
+
+TIP: this post is not about how to set up the stack but keep in mind getting data is not being able to use it, the data design and tagging (which pod, which component, ...) is a crucial topic.
+
+== Common observability stack
+
+Observability is not a new thing, it exists since applications exist but it makes several years it takes the "modern" form that Kubernetes just reused.
+
+* The logs are written to files - even in Kubernetes in general since the logging driver often ends in files even for `stdout`/`stderr`, then an agent collects them and sends them to an collector/aggregator to let them be queried,
+* The metrics are often just counters (a value representing the state since the application _instance_ startup) and gauges (a value at the read instant) but you can get way more types like histograms (think statistics like percentiles about a value). Here there are two options: either the application pushes its metrics to the collector or it lets an agent pulling it - similarly to log in terms of very high level,
+* Finally the traces (which are composed of the "steps", called _spans_) are not collected at once since it would require to hit all the spans to work but often layer by layer (service by service) and then they are recomposed as a single trace (set of spans) by the collector using the trace identifier.
+
+The common bricks to implement such an infrastructures are:
+
+* *Promtail* to collect the logs and *Loki* to query them,
+* *Prometheus* to pull and query the metrics,
+* *Zipkin* or more recently *jaeger* to collector and query the traces.
+
+IMPORTANT: a real world deployment will never put the collector and query instances together as a single container, it is often multiple instances of pod.
+
+To complete the picture and make it usable you often add *Grafana* which just calls the "query" parts of the previous elements to show it in a beautiful - and user friendly - UI.
+
+NOTE: all this stack is what you will commonly find in Kubernetes clusters but note that OpenTelemetry tend to propose the push mode to all aspects of the data (which is not always the simplest to get stable at runtime).
+
+== Role of the application
+
+To be abservable, an application has some pre-requisites.
+
+IMPORTANT: in the context of this post, I'll not detail how important it is to think if the automatic instrumentation works and is relevant for your case but most of the time you need to create custom metrics and customize and add to the default spans data - even add child spans. It is the same kind of work than thinking about its log, that it contains all the needed data to understand what happent, where and for which user if relevant (call context).
+Done automatically you get very quickly something but you consume a lot of storage ($$) and time ($$) on your cloud provider to at the end not be able to exploit very quickly all the data you collected so this part, even if not technical, is very important.
+
+=== Logs
+
+There are multiple options for the logs but the simplest is to redirect the logs of your application to `stdout`/`stderr` - ideally depending the log level, if less than `Warning` use `stdout` else use `stderr`, the source will generally be auto-tagged and enable a better filtering.
+
+IMPORTANT: ensure your Kubernetes installation is using a file based - or at least a very fast medium - for the logs otherwise this can be a bottleneck.
+
+Then the application must ensure any relevant information is logged at the right level, this is often a per case work but the minimum is to ensure exceptions are logged and when the full observability stack is enabled that the `TraceID` is logged as well as an additional data to ensure the logs can be linked to traces or the opposite.
+
+=== Metrics
+
+For metrics we often see people importing a library auto-magically enabling everything.
+
+We'll discuss this case more in next part but keep in mind that generally getting metrics is just getting a HTTP "text" endpoint called by an agent so assuming you don't have any library you get it in a few lines adding a custom endpoint dumping the list of values you want in the right format (it is very simple, almost a key-value format we'll see later).
+
+The libraries advantages are mainly - you will note it is not that much technically for prometheus case:
+
+* Having the instrumentation logic built-in - integration with Asp.NET/Kestrel for example,
+* Having the exporter format pre-implemented - prometheus or opentelemetry format,
+* Proposing a registry API to put all the metric altogether.
+
+Here the application role will mainly be to ensure all the data linked to the capacity planning (storage, concurrency, CPU usage, memory/gc usage, ...) are in metrics and usable.
+
+A common example is that tracing endpoints is important and it is better to inject the HTTP method and path ("identifier" of the call) as tag in a single metric name to be able to do avanced dashboard:
+
+[source,plaintext]
+----
+http_endpoint{method="POST",path="/login"} 5
+http_endpoint{method="POST",path="/logout"} 1
+----
+
+is better than
+
+[source,plaintext]
+----
+http_endpoint_login 5
+http_endpoint_logout 1
+----
+
+Also don't forget to check the libraries you are using are instrumented somehow otherwise you can miss some calls - like http client calls if you don't use a commonly supported library.
+
+NOTE: if you use a RPC based stack (JSON-RPC, gRPC, GraphQL), ensure to put the method/operation name in tags instead of the HTTP method/path which will always be the same.
+
+=== Traces
+
+Similarly to metrics, the tracing is often setup using a library but it is a bit more complicated because there the game is to handle a stack of calls during one "request" - HTTP or not, it can be an async job triggering.
+
+The very high level "middleware" or interceptor will setup a context from the incoming data (HTTP request for example).
+At that stage we know if a trace exists or if it must be created then all subcalls - spans - in the same application for the same request will be attached to it (by identifiers - `TraceID`).
+
+All the challenge is to have this context properly setup and accurate to not have spans attached to the wrong trace (thanks `ThreadLocal`, `AsyncLocal` and friends, a broken setup is very easy to get).
+
+However, this is key since this is this context which enables to get the right "stack" of calls and enrich the spans when we reach the code which has some important data - like attaching the username after authentication layer or the response status after the request processing.
+
+The main challenges for application developers there are to ensure:
+
+* All the "hops" - remote calls - are traced - if you use a library it is maybe not instrumented,
+* The context - username at least in general but can be an identifier if relevant - are added in the spans - at least the root one of the instance. 
+
+== .NET OpenTelemetry
+
+Since link:https://opentelemetry.io/docs/what-is-opentelemetry/[OpenTelemetry,window=_blank] project was created on top of prometheus, OpenTracing and common logging patterns, the project created a specification defining the concepts I just talked about but also implementations integrating with most languages and stacks. It is not different for link:https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/[dotnet,window=_blank] which got its nuget packages to get these features onboard.
+
+== .NET OpenTelemetry metrics setup
+
+To keep things simple, we'll instrument an ASP.NET core server in this post.
+
+The first step is to add the following package references:
+
+[source,xml]
+----
+<PackageReference
+  Include="OpenTelemetry.Exporter.Prometheus.AspNetCore"
+  Version="1.9.0-beta.2"
+/>
+<PackageReference
+  Include="OpenTelemetry.Extensions.Hosting"
+  Version="1.9.0"
+/>
+----
+
+Then modify your server initialization to enable metrics on your `WebApplicationBuilder` and register the `Prometheus` endpoint:
+
+[source,cs]
+----
+using OpenTelemetry.Metrics; <1>
+
+var builder = WebApplication.CreateBuilder(args);
+
+// enable metrics
+builder.Services
+  .AddOpenTelemetry() <2>
+  .WithMetrics(builder =>
+  {
+    builder.AddPrometheusExporter(); <3>
+
+    builder.AddMeter("Microsoft.AspNetCore.Hosting", <4>
+                     "Microsoft.AspNetCore.Server.Kestrel",
+                     "Microsoft.AspNetCore.Routing");
+    builder.AddView("http.server.request.duration", <5>
+      new ExplicitBucketHistogramConfiguration
+      {
+        Boundaries = [ 0, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10 ]
+      });
+  });
+
+var app = builder.Build();
+
+app.MapPrometheusScrapingEndpoint(); <6>
+
+// ...
+
+app.Run();
+----
+<.> Import `OpenTelemetry.Metrics` to be able to use the C# extensions enabling to setup the metrics,
+<.> Register in the application (builder) IoC/services the telemetry beans,
+<.> Activate the prometheus exporter to ensure you can use prometheus serializer/format,
+<.> Enable the metrics related to the HTTP server (Kestrel),
+<.> Customize the HTTP request duration histogram (optional),
+<.> Enable the prometheus endpoint (`/metrics`).
+
+Once done and recompiled, you can run your application and hit the `/metrics` endpoint (if you use the default - `web` - template to create the application, it will be on `http://localhost:5103/metrics`).
+
+The output should be something like:
+
+[source,plaintext]
+----
+# TYPE kestrel_active_connections gauge
+# HELP kestrel_active_connections Number of connections that are currently active on the server.
+kestrel_active_connections{otel_scope_name="Microsoft.AspNetCore.Server.Kestrel",network_transport="tcp",network_type="ipv6",server_address="::1",server_port="5103"} 2 1723376518568
+# TYPE kestrel_queued_connections gauge
+# HELP kestrel_queued_connections Number of connections that are currently queued and are waiting to start.
+kestrel_queued_connections{otel_scope_name="Microsoft.AspNetCore.Server.Kestrel",network_transport="tcp",network_type="ipv6",server_address="::1",server_port="5103"} 0 1723376518568
+# TYPE http_server_active_requests gauge
+# HELP http_server_active_requests Number of active HTTP server requests.
+http_server_active_requests{otel_scope_name="Microsoft.AspNetCore.Hosting",http_request_method="GET",url_scheme="http"} 1 1723376518568
+# EOF
+----
+
+(see why I said metrics are not very hard to do manually but the main challenge is instrumenting what is needed right)
+
+== What is wrong with OpenTelemetry metrics within Kubernetes?
+
+Until now we understood the big picture and the low level setup but we miss a key layer: the integration in the ecosystem.
+
+When integrating metrics with Kubernetes, you configure the endpoint to call (explicitly or not) using annotations in Kubernetes descriptors.
+At the end you say "please poll every x seconds `/metrics` endpoint using the IP of the pod and the port _P_".
+
+So far so good but Prometheus does not support security so what we did is we exposed an endpoint with critical data on the same port than the one used for our main/business code....guess you see what can turn wrong.
+
+The other issue is that if you hit multiple times the metrics endpoint you will see that the request counter will keep incrementing...so our monitoring stack impacts what we see. When we read 100 requests we should remove the monitoring ones, not very convenient, even for this trivial case.
+
+So the good practise is to ensure:
+
+* The monitoring endpoints are on another port (or server generally speaking but this requires some more work in .NET). This guarantees that the endpoints can be exposed outside the cluster (~physical security) and limits the errors.
+* The monitoring stack is not self-monitoring until desired to keep data related to the application and easy to understand and query.
+
+== How to enhance the application?
+
+=== Split business and monitoring servers
+
+The easiest to solve is to ensure we split the main server and the monitoring server (the one hosting the metrics endpoint).
+
+There are two main options:
+
+. since .NET server supports multiple urls you add an URL for the monitoring then bind prometheus endpoint only if it uses the monitoring url (normally a test on the port is sufficient)
+. you then configure prometheus to poll from this new port in the Kubernetes descriptor annotations
+
+TIP: since you add an URL you add a protocol (prometheus supports HTTP and HTTPS so this choice is up to you), port and host/IP. Using the pod IP (you can inject it using environment variables and field path variables - `status.podIP`) you restrict even more the access to prometheus client so it can be a good idea instead of using a wildcard/0.0.0.0 binding.
+
+To tune the list of URL you can customize the `launchSettings.json` (for testing purposes we'll use `http://localhost:808` as address):
+
+[source,json]
+----
+{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "http": {
+      ...
+      "applicationUrl": "http://localhost:5103;http://localhost:8081"
+    },
+    "https": {
+      "applicationUrl": "https://localhost:7246;http://localhost:5103;http://localhost:8081",
+      ...
+    }
+  }
+}
+----
+
+but also `appsettings.json` - or the environment related file:
+
+[source,json]
+----
+{
+  "urls": "http://*:5003;http://*:8081"
+}
+----
+
+but also one of the environment variables which set the URLs like `ASPNETCORE_URL` or just do it programmatically (`WebApplicationBuilder.UseUrls` or `WebApplication.Urls.Add(...)`).
+
+Now, to ensure the `/metrics` endpoint is ignored when not called on the monitoring server (port 8081 in previous snippets), just call `UseOpenTelemetryPrometheusScrapingEndpoint` on the application testing the context port:
+
+[source,cs]
+----
+app.UseOpenTelemetryPrometheusScrapingEndpoint(
+  context => context.Request.Path == "/metrics"
+          && context.Connection.LocalPort == 8081
+);
+----
+
+IMPORTANT: this replaces the `MapPrometheusScrapingEndpoint` call.
+
+=== Alternative split: use 2 servers
+
+There is another way to split but this one is less friendly and robust in .NET: create two servers (`WebApplication`).
+
+This one depends a bit how you use your `WebApplication` and if you use its IoC for your application but generally speaking you will put the beans in the main application and just create a monitoring one which will lookup the beans from the main application for opentelemetry registration.
+
+It can look like:
+
+[source,cs]
+----
+// ...
+var app = builder.Build(); <1>
+
+var monitoring = WebApplication.CreateBuilder(args).Build(); <2>
+monitoring.Urls.Add("http://localhost:8081"); <3>
+new DispatchingEndpointRouteBuilder(app, monitoring).MapPrometheusScrapingEndpoint(); <4>
+using var monitoringServer = monitoring.StartAsync(); <5>
+app.Run(); <6>
+
+
+class DispatchingEndpointRouteBuilder(WebApplication Main, IEndpointRouteBuilder Monitoring) <4>
+    : IEndpointRouteBuilder
+{
+    public IServiceProvider ServiceProvider => Main.Services;
+
+    public ICollection<EndpointDataSource> DataSources => Monitoring.DataSources;
+
+    public IApplicationBuilder CreateApplicationBuilder()
+    {
+        return Monitoring.CreateApplicationBuilder();
+    }
+}
+----
+<.> Create your business application as usual,
+<.> Create another web application for the monitoring,
+<.> Bind the monitoring URL (optional),
+<.> Bind the prometheus endpoint on a custom endpoint route builder which uses the business IoC (`ServiceProvider`) and delegates the rest to the monitoring application (endpoint registration),
+<.> Start the monitoring server without blocking,
+<.> Start the business server and wait for the end of the execution.
+
+=== Don't count monitoring requests
+
+Until .NET 8 it is not possible to do it without a hack (reimplementing the counters using a middleware and ignoring default instrumentation, decrementing the counters etc...).
+
+However, the v9 (>= preview 7) will enable link:https://github.com/dotnet/aspnetcore/pull/56036[it,window=_blank].
+
+On an endpoint - `MapPrometheusScrapingEndpoint` - you will be able to call `DisableHttpMetrics()` to make ASP runtime ignore the metrics for this endpoint.
+
+...but wait, we just dropped this call to use the `UseOpenTelemetryPrometheusScrapingEndpoint` one instead.
+
+This is where the 2 servers option can work but it is not an end cause you can also disable programmatically the metrics for an endpoint with the `DisableHttpMetricsAttribute` so this will be doable but without the fluent API.
+
+Hopefully it will be integrated to link:https://github.com/open-telemetry/opentelemetry-dotnet/issues/4449#issuecomment-2282820730[OpenTelemetry.NET] integration soon to get a smoother experience.
+
+== Conclusion
+
+This post goal was to show that the observability work is very technical and requires a lot of effort of a lot of people (developers to setup the tools, ops to define the needed metrics and evaluate the needed storage/infrastructure, potentially business for the same reason, ...) but most of the work is not very technical and requires to think about what we want and what we do implies.
+
+The example of the endpoints (metrics, health most of the time) exposure and the self monitoring has some technical implications but is often missed just by the lack of step back when importing the OpenTelemetry library.
+
+So as for any topic it is important to not just think important a library does the work but ensuring it does it as expected is always worth it (often some tuning is possible).

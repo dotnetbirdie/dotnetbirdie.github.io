@@ -62,6 +62,12 @@ div.colist.arabic ol>li::before {
     font-weight: 500;
 }
 
+/* text styling */
+.line-through {
+    text-decoration: line-through;
+    margin-right: 0.2rem;
+}
+
 /* code border */
 pre {
     border: 2px solid #3F3682;
@@ -70,7 +76,7 @@ pre {
 }
 
 /* inline code styling override */
-p > code {
+p>code {
     --bs-code-color: black;
     font-weight: bold;
     font-style: italic;
@@ -82,23 +88,28 @@ b.conum {
 }
 
 /* alert inline code color/style overrides */
-div.alert div.paragraph > p > code {
+div.alert div.paragraph>p>code {
     /* there bold+italic would be pretty much not readable */
     font-weight: normal;
     font-style: normal;
 }
-div.alert.alert-success div.paragraph > p > code {
+
+div.alert.alert-success div.paragraph>p>code {
     color: var(--bs-success);
 }
-div.alert.alert-primary div.paragraph > p > code {
+
+div.alert.alert-primary div.paragraph>p>code {
     color: var(--bs-primary);
 }
-div.alert.alert-danger div.paragraph > p > code {
+
+div.alert.alert-danger div.paragraph>p>code {
     color: var(--bs-danger);
 }
-div.alert.alert-warning div.paragraph > p > code {
+
+div.alert.alert-warning div.paragraph>p>code {
     color: var(--bs-warning);
 }
-div.alert.alert-info div.paragraph > p > code {
+
+div.alert.alert-info div.paragraph>p>code {
     color: var(--bs-info);
 }

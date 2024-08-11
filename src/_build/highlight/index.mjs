@@ -6,6 +6,16 @@ import hljs from 'highlight.js';
 const currentScript = path.dirname(fileURLToPath(import.meta.url));
 const sources = `${currentScript}/../../../_site`;
 
+function unescape(str) {
+    return str
+        // revert escapeHtml since we are in a pre block - needed cause outside the dom in terms of highlight.js API, dom wired API knows it
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, '\'');
+}
+
 function preHighlight(file) {
     let content = fs.readFileSync(file, { encoding: 'utf-8' });
 
@@ -54,15 +64,9 @@ function preHighlight(file) {
             opts.language = content.substring(lang + langAttr.length, content.indexOf('"', lang + langAttr.length + 1));
         }
 
-        const code = content.substring(nextBlock, end);
-        const rawHighlighted = (!opts.language ? hljs.highlightAuto(code) : hljs.highlight(code, opts))
-            .value
-            // revert escapeHtml since we are in a pre block - needed cause outside the dom in terms of highlight.js API, dom wired API knows it
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&#x27;/g, '\'');
+        const code = unescape(content.substring(nextBlock, end));
+        const h = (!opts.language ? hljs.highlightAuto(code) : hljs.highlight(code, opts));
+        const rawHighlighted = unescape(h.value);
         const highlighted = rawHighlighted
             // conum were escaped - see next replaces - so just get them back
             .replace(
