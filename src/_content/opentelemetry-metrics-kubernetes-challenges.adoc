@@ -4,9 +4,8 @@
 :summary: How to use .NET OpenTelemetry metrics package and which challenges to solve to integrate within Kubernetes.
 :view: post.single
 :tags: JSON, .NET, Kubernetes, OpenTelemetry, Kubernetes
+:post-image: /img/posts/opentelemetry-metrics-kubernetes-challenges.png
 include::_metadata/authors/rmannibucau.attributes.adoc[]
-
-//:post-image: /img/posts/system-text-json-aot-and-serializer-options.{view}
 
 [abstract]
 We deploy almost all our application within Kubernetes today but the ecosystem is not always mature.
