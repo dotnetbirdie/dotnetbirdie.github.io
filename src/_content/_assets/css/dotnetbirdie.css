@@ -75,6 +75,13 @@ pre {
     box-shadow: 4px 4px 4px #3F3682;
 }
 
+/* code in title */
+h2 > code {
+    font-size: 2rem !important;
+    font-style: italic;
+    color: inherit;
+}
+
 /* inline code styling override */
 p>code {
     --bs-code-color: black;

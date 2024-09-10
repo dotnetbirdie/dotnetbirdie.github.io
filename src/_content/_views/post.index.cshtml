@@ -33,6 +33,17 @@
         var authorDisplayName = attributes.TryGetValue("author-displayName", out string dn) ? dn : author;
         var postImage = attributes.TryGetValue("post-image", out string pi) ? pi : "/img/default-post.png";
 
+        var summary = attributes["summary"];
+        if (summary.Contains("`") || summary.Contains("_") || summary.Contains("*")) // is adoc
+        {
+            var parser = new NAsciidoc.Parser.Parser();
+            var doc = parser.Parse(summary);
+            var rendererConf = new NAsciidoc.Renderer.AsciidoctorLikeHtmlRenderer.Configuration();
+            var renderer = new SBSharp.Core.Asciidoc.BootstrapRender(rendererConf);
+            renderer.VisitBody(doc.Body);
+            summary = Raw(renderer.Result());
+        }
+
         <article class="post">
             <div class="card w-100 p-2 mt-2">
                 <div class="card-body d-flex">
@@ -52,7 +63,7 @@
                             <a href="/blog/author/@author/1.html"
                                 style="color: #005da6;font-weight: 600;text-decoration: none;">@authorDisplayName</a>
                         </div>
-                        <p class="pt-2 card-text">@attributes["summary"]</p>
+                        <div class="pt-2 card-text">@summary</div>
 
                         @if (tags.Length > 0)
                         {

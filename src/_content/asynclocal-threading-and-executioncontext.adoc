@@ -1,0 +1,321 @@
+= AsyncLocal, Threading and execution context
+:published-on: 20240910
+:archive-date: 2024
+:summary: Coming from synchronous and `ThreadLocal` to asynchronous and something equivalent can be challenging, let's see the `AsyncLocal` case.
+:view: post.single
+:tags: .NET, State, Context, AsyncLocal, ThreadLocal
+:post-image: /img/posts/asynclocal-threading-and-executioncontext.png
+include::_metadata/authors/rmannibucau.attributes.adoc[]
+
+[abstract]
+Whatever good will we have, there is almost always a case we have to pass parameters to a method which is not planned to get these parameters.
+To solve that case, the common solution is to use _context_ based storage, either through `ThreadLocal` or `AsyncLocal`.
+Let see what it means in .NET.
+
+== Context based storage
+
+The need arises very frequently when you rely on a third party library which didn't plan to let you pass any kind of parameter.
+
+A common example is the security, you rarely know upfront where the data comes from but you, most of the time, have a `MySecurity.GetCurrentUser()` kind of method. Worse, adding or refining security constraints - coming from a role based to an entity based security for example, you need to get the security context in methods which were not planned to get it. A common example is `FindEntityById(string)` which should be `FindEntityById(string, SecurityContext)` but this can be a huge refactoring depending the code base.
+
+TIP: there are a lot of alternatives to add this new parameter explicitly but most of the time it requires a refactoring.
+While it is very doable when it impacts one-two methods, when it impacts a chain of methods and potentially the whole code base it is almost impossible, this is where - and only where ;) - the contextual data should help you.
+
+The solution is often to use a context based storage.
+What is it? Basically just a dictionary ("map") stored in the current "context".
+Depending the case it can be related to the thread or not.
+
+=== ThreadLocal/ThreadStatic
+
+Thread related storages are very simple: you can set (/reset) the data you want to pass to downstream calls while you keep using the same thread.
+
+A typical example:
+
+[source,cs]
+----
+public class RequestHandler
+{
+  public void OnRequest(Request, Response) // <1>
+  {
+    // often in a filter <2>
+    var user = LoginIfNeeded();
+    User.Current = user;
+
+    // actual handling
+    try
+    {
+      DoHandle(Request, Response); <3>
+    }
+    finally
+    {
+      User.Current = null; <2>
+    }
+  }
+}
+
+public class MyService
+{
+  [Logged] <4>
+  public Entity? FindById(string id) { /*... */}
+}
+
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+public class LoggedAttribute : Attribute
+{
+  public void OnEnter() <5>
+  {
+    if (User.Current is not null)
+    {
+      throw new InvalidOperationException("Ensure to be logged to call this function");
+    }
+  }
+}
+----
+<.> We assume this is our request handler, ie the method called when any HTTP request is incoming (ASP.NET for ex),
+<.> This logic (log if some credential were provided and clean up the logged user after the request) if often put in a middleware or a request filter *around* the request handling (transversal concern),
+<.> The handling of the request will target a service and its interceptors (`LoggedAttribute` in this example),
+<.> We flag the service method with an interceptor which will ensure some user is logged and it is not an anonymous call,
+<.> The logged attribute (interceptor in terms of design) will fail if the user was not logged by the middleware reading the contextual user.
+
+The question there is how to implement the `User.Current` property?
+
+The simplest option is to use a `ThreadLocal` (or `ThreadStatic` attribute), ie a storage associating a data with the current thread:
+
+[source,cs]
+----
+public class User
+{
+  // todo: threadstatic
+  private static readonly ThreadLocal<User> _current = new();
+
+  public static User => _current.Value;
+}
+----
+
+=== ThreadLocal vs ThreadStatic
+
+A `ThreadStatic` attribute is a static class field marked with ̀ThreadStaticAttribute`, this is sufficient to let the runtime know that the instance is per thread:
+
+[source,cs]
+----
+public class User
+{
+  [ThreadStatic]
+  private static User _user;
+}
+----
+
+In terms of implementation it is quite easy to follow as soon as you visualize the .NET runtime just associate it to a thread related memory (the thread has a pointer to the thread static data - all of them):
+link:https://github.com/dotnet/runtime/blob/b523ec5c74026cf82d4a561a7980292a79ae20f6/src/coreclr/vm/threadstatics.cpp#L66[threadstatics.cpp,window=_blank].
+
+As we saw just before, a `ThreadLocal` wraps a type - it is a "container" which behaves more or less like `ThreadStatic` attribute.
+Here again, from a source standpoint it is normal since a `ThreadLocal` will store its data in...a `ThreadStatic` field:
+link:https://github.com/dotnet/runtime/blob/b523ec5c74026cf82d4a561a7980292a79ae20f6/src/libraries/System.Private.CoreLib/src/System/Threading/ThreadLocal.cs#L38[ThreadLocal.cs,window=_blank].
+
+So why having two solutions for the same thing? `ThreadLocal` just provides a higer level API and can be more convenient to use but they are not strictly different from a technical standpoint.
+
+== All is fine until it becomes `async`
+
+`async`/`await` are C# keywords which enable to handle "asynchronous" `Task`...they just enable to implement a state machine (a.k.a. _async state machine_) which handles the states of the promise (`Task`) or in other words it enables to write as any procedural code a callback based code and simplify the continuations programming.
+
+Let see a simple example, if I'm doing a HTTP call then deserialize the response and save it in a database I would probably have something like:
+
+[source,cs]
+----
+HttpCall()
+  .Then(res => {
+    res.ThrowIfError();
+    return Deserialize(res.Payload);
+  })
+  .Then(data => SaveInDb(data));
+----
+
+NOTE: this is a pure pseudo code for the example, don't do it this way in C#.
+
+The issue with this code is that in practise all the steps will be `Async`, ie I don't have to block a thread to await the completion but I can just request the caller/previous step to call me when done.
+This is why `Then` is used - `ContinueWith` in `Task` API.
+
+However, this can quickly become a nightmare if you stack too much of these calls - the well known "callback hell" from Javascript.
+
+To make the programming model simpler, .NET introduced `async`/`await` keywords so previous code will be:
+
+[source,cs]
+----
+public async Task DoHttpCall()
+{
+  var res = await HttpCall();
+  res.ThrowIfError();
+  var data = await Deserialize(res.Payload);
+  await SaveInDb(data);
+}
+----
+
+The two differences are that the method definition now has `async` keyword and returns a `Task` - or a `Task<X>` if you need to return a result, and that the calls which don't have to block - because most of the time they rely on I/O - have the keyword `await` which means that as soon as a call will not be able to be done directly, the task will be stacked in the .NET `ThreadPool` queue to be continued when possible.
+
+IMPORTANT: this programming model relies on a thread pool which means you can't assume much about the thread you will be executed in - until you tune part of the execution but it is rarely what we want to do.
+
+Another thing is that we often add to the await call `ConfigureAwait(false)` to ensure the task doesn't await the original thread is available to continue its execution even if it is ready before but runs as soon as it can:
+
+[source,cs]
+----
+var res = await HttpCall().ConfigureAwait(false);
+----
+
+In this context where you don't know in which thread your method will continue it is pretty impossible to use `ThreadStatic` based solution to propagate any context.
+
+== Async and context
+
+In most languages, and in particular when you don't rewire all your code - including dependencies, the best pattern to work in reactive/asynchronous (both) programming models is to use the message passing pattern.
+It is the simplest and most efficient one: you need a parameter, you pass it.
+You then control that your data are immutable or not and don't need any pre-requisite in any runtime.
+
+But as we saw earlier it is not always possible.
+
+Thanksfully, .NET provides an `AsyncLocal` class which as its name shows is the `ThreadLocal` of `async` methods...almost.
+
+Before digging in `AsyncLocal`, let see how we would handle it with `ThreadLocal` (or `ThreadStatic`):
+
+. We need to wrap any task to capture its data before switching of task and/or thread,
+. We need to capture the current data and restore the captured data before continuing the execution
+. Once the execution is done we need to restore previous 
+
+In pseudo code it looks like:
+
+[source,cs]
+----
+var current = User.Current; <1>
+HttpCall()
+  .Then(res => {
+    var old = User.Current; <2>
+    User.Current = captured; <3>
+    try
+    {
+      res.ThrowIfError();
+      return Deserialize(res.Payload);
+    }
+    finally
+    {
+      User.Current = old; <4>
+    }
+  });
+----
+<.> We capture the contextual user,
+<.> We capture the contextual user in the new context (in case there is one),
+<.> We force the contextual user to be the one of the start of our execution (full method),
+<.> We reset the contextual user to the one before we start executing our code.
+
+IMPORTANT: as you can note, if the `Deserialize` method is asynchronous too we will do the same inside this method if there are other continuations (`ContinueWith` or `Then` in this example). This means that more we go down in the stack of calls more we stack this pattern and values.
+
+This coding pattern is not very convenient and we quickly get helper methods but we still have the issue to push this utility from 3rd parties to other libraries...and not forget any continuation/method or the propagation will be broken...impossible in practise.
+
+To make things easier, .NET does it out of the box and materializes the context by an `ExecutionContext` class.
+
+As an user you don't have much control over it except to request to ignore its propagation or capture it.
+
+However, this is the secret of the `AsyncLocal` implementation.
+
+Any thread can have an `ExecutionContext` associated.
+Any execution context instance has a dictionary/map of the values in `AsyncLocal` instances (see link:https://github.com/dotnet/runtime/blob/b523ec5c74026cf82d4a561a7980292a79ae20f6/src/libraries/System.Private.CoreLib/src/System/Threading/ExecutionContext.cs#L25[ExecutionContext.cs,window=_blank]).
+The .NET runtime uses the previous pattern in the async state machine - when you have an `await` call - but as soon as you use tasks for all of them you don't forget any case anymore and since the execution context is a container type of structure, it is a bit more efficient than stacking the same value again and again.
+
+So overall it sounds very simple...it could have been but no.
+
+The thing is that the async state machine (the code handling the `await` and generated by the compiler) and the capture/restore is not strictly linked to threads but more to methods.
+
+Let's take a simple case:
+
+[source,cs]
+----
+public async Task DoHttpCall()
+{
+  LogThreadAndAsyncLocalUser();
+  var res = await HttpCall();
+  res.ThrowIfError();
+  var data = await Deserialize(res.Payload);
+}
+
+private async Task<HttPResponse> HttpCall(Stream stream)
+{
+  LogThreadAndAsyncLocalUser();
+  return await DoHttpCall();
+}
+
+private async Task<Model> Deserialize(Stream stream)
+{
+  LogThreadAndAsyncLocalUser();
+  var data = await DoDeserialize(stream);
+}
+----
+
+We'll assume `LogThreadAndAsyncLocalUser` logs the thread and the `AsyncLocal` we would have used for our `User.Current` property.
+
+The output of the http call (first method) would likely be:
+
+[source]
+----
+DoHttpCall: thread 1, user 1
+HttpCall: thread 1, user 1
+HttpCall: thread 1, user 1
+Deserialize: thread 2, user 1
+----
+
+The user is propagated - this is what we expect from an `AsyncLocal` and the thread (can have) has changed for last call - this is what we expect from the async feature. So what's the issue?
+
+In this case we assumed we had the contextual data set but now let see if we set it in ̀HttpCall` - first line, and read it in `DoHttpCall` - last line.
+This should work since the entering into ̀DoHttpCall` is synchronous and uses the same thread right?
+
+So code would be:
+
+
+[source,cs]
+----
+public async Task DoHttpCall()
+{
+  LogThreadAndAsyncLocalUser();
+  var res = await HttpCall();
+  res.ThrowIfError();
+  var data = await Deserialize(res.Payload);
+  LogUser(); <1>
+}
+
+private async Task<HttPResponse> HttpCall(Stream stream)
+{
+  User.Current = new User("test"); <2>
+  LogThreadAndAsyncLocalUser();
+  return await DoHttpCall();
+}
+
+private async Task<Model> Deserialize(Stream stream)
+{
+  LogThreadAndAsyncLocalUser();
+  var data = await DoDeserialize(stream);
+}
+----
+<.> We read the user which was initialized in the nested `HttpCall` method but within the same original thread of the initial method call,
+<.> We force a test user in the `AsyncLocal` value.
+
+If you run it you will see that `LogUser()` will have lost the user set in `HttpCall`, weird no?
+
+Not that much, recall the capture/restore pattern?
+
+The execution context - associated to the thread - is set when you change an `AsyncLocal` value - our test user, see link:https://github.com/dotnet/runtime/blob/b523ec5c74026cf82d4a561a7980292a79ae20f6/src/libraries/System.Private.CoreLib/src/System/Threading/ExecutionContext.cs#L528[ExecutionContext.cs] again.
+However the context is considered immutable (itself not its nested values) and here it happens after the value before entering into the `await`-ed method was called (before `HttpCall`) so when exiting the method the old value is restored (and for other calls too) so we get back the value we have before entering into the first `await`, nothing if it was not set for example.
+
+This is where `AsyncLocal` is very different from a `ThreadLocal`.
+With a `ThreadLocal` this logic would have worked while the `await` (or nested methods) were not changing of thread.
+In other words, you can lazy initialize a `ThreadLocal`/`ThreadStatic` but you can't lazy initialize an `AsyncLocal`.
+
+However you can always early initialize it to a mutable container class (a "holder" or "wrapper") and lazily set the actual interesting value.
+
+IMPORTANT: whatever you use, always ensure to have some mecanism to clean up the value when you don't need it anymore, generally it is the finally block of the method initializing the value but it is very important to not leak data between requests (or contexts).
+
+== Conclusion
+
+What is important to note there is that threading assumptions in `async` world are generally pointless and should be avoided.
+All you must assume is that if you get a thread you have CPU computation ("work") to do and that you don't use a thread when you don't/await some result.
+
+The `AsyncLocal` data propagation is "just" a capture and restore pattern which has its own limitations so always ensure you initialize your `AsyncLocal` in a higher order function (or higher level call) if you need it, potentially with a holder hack.
+
+For request scoped data - in ASP.NET, the initialization can take place in a well positioned middleware.
+
+When you can, try to avoid to rely on such mecanism and just propgate the value from the top to the down of your application by message passing (parameter(s) of your methods).
