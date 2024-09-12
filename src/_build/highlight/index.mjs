@@ -74,6 +74,9 @@ function preHighlight(file) {
                 '<b class="conum">($1)</b>')
             .replace(
                 /<b <span class="hljs-keyword">class<\/span>=<span class="hljs-string">"conum"<\/span>>\(<span class="hljs-number">(\d+)<\/span>\)<\/b>/g,
+                '<b class="conum">($1)</b>')
+            .replace(
+                /<b <span class="hljs-keyword">class<\/span><\/span>=<span class="hljs-string">"conum"<\/span>>\(<span class="hljs-number">(\d+)<\/span>\)<\/b>/g,
                 '<b class="conum">($1)</b>');
         content = `${content.substring(0, nextBlock)}${highlighted}${content.substring(end)}`;
         from = nextBlock + highlighted.length + suffix.length + 1;
