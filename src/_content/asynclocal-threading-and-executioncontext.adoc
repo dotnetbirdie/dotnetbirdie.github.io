@@ -64,7 +64,7 @@ public class LoggedAttribute : Attribute
 {
   public void OnEnter() <5>
   {
-    if (User.Current is not null)
+    if (User.Current is null)
     {
       throw new InvalidOperationException("Ensure to be logged to call this function");
     }
@@ -183,7 +183,7 @@ In pseudo code it looks like:
 
 [source,cs]
 ----
-var current = User.Current; <1>
+var captured = User.Current; <1>
 HttpCall()
   .Then(res => {
     var old = User.Current; <2>
@@ -234,10 +234,10 @@ public async Task DoHttpCall()
   var data = await Deserialize(res.Payload);
 }
 
-private async Task<HttPResponse> HttpCall(Stream stream)
+private async Task<HttpResponse> HttpCall()
 {
   LogThreadAndAsyncLocalUser();
-  return await DoHttpCall();
+  return await HttpClientCall();
 }
 
 private async Task<Model> Deserialize(Stream stream)
@@ -255,14 +255,14 @@ The output of the http call (first method) would likely be:
 ----
 DoHttpCall: thread 1, user 1
 HttpCall: thread 1, user 1
-HttpCall: thread 1, user 1
+HttpClientCall: thread 1, user 1
 Deserialize: thread 2, user 1
 ----
 
 The user is propagated - this is what we expect from an `AsyncLocal` and the thread (can have) has changed for last call - this is what we expect from the async feature. So what's the issue?
 
-In this case we assumed we had the contextual data set but now let see if we set it in ̀HttpCall` - first line, and read it in `DoHttpCall` - last line.
-This should work since the entering into ̀DoHttpCall` is synchronous and uses the same thread right?
+In this case we assumed we had the contextual data set but now let see if we set it in ̀`HttpCall` - first line, and read it in `DoHttpCall` - last line.
+This should work since the entering into ̀`DoHttpCall` is synchronous and uses the same thread right?
 
 So code would be:
 
@@ -278,11 +278,11 @@ public async Task DoHttpCall()
   LogUser(); <1>
 }
 
-private async Task<HttPResponse> HttpCall(Stream stream)
+private async Task<HttpResponse> HttpCall()
 {
   User.Current = new User("test"); <2>
   LogThreadAndAsyncLocalUser();
-  return await DoHttpCall();
+  return await HttpClientCall();
 }
 
 private async Task<Model> Deserialize(Stream stream)
