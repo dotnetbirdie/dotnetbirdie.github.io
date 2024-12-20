@@ -1,0 +1,300 @@
+= .NET and Kubernetes setup
+:published-on: 20241020
+:archive-date: 2024
+:summary: Kubernetes helps a lot to reduce the time to go to production and the needed development effort. However it needs some carefulness about the setup regarding security and runtime. Let see specifically some .NET impact of harnessing its `Pod`.
+:view: post.single
+:tags: .NET, Kubernetes, Cloud
+:post-image: /img/posts/dotnet-kubernetes-setup.jpeg
+include::_metadata/authors/rmannibucau.attributes.adoc[]
+
+== Kubernetes reminder
+
+Without starting to re-explain all Kubernetes concepts, it is important to keep in mind Kubernetes is a workload manager at the end.
+Therefore its role is mainly to create light environments (a `Pod`) hosting some workload in a controlled environment.
+
+But these light environments (containers at the end) are execute on some host (often a `Node`).
+
+TIP: indeed Kubernetes is not only about workload, it is also about storage and network for example, but let's focus on the workload/container impacts in this post.
+
+The configuration of the workload is done using descriptor(s) - YAML or JSON files in general.
+The granularity can vary. The minimal one is a `Pod` which defines a "virtual machine" in the "old" world, ie a set of containers - think applications.
+
+Then you can add on top of that some control:
+
+* A `Job` which controls retries for batch like applications,
+* A `CronJob` which is a scheduled (time) `Job`,
+* A `Deployment` which is a stateless and scalable definition of `Pod` (often it is used for web application/ASP.NET to scale from 1 to N instances),
+* A `StatefulSet` which is more or less a deployment but which is guaranteed to keep its state when restarting.
+
+NOTE: there are other kinds which are used by higher level descriptors, for example `Deployment` are backed by `ReplicaSet` but this becomes out of the scope of this post.
+
+A common `Pod` will look like:
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+spec:
+    securityContext: <1>
+        ...
+    containers:
+    - name: app
+        securityContext: <2>
+            ...
+        image: oci.myregistry.com/myapp:1.2.3
+        resources: <3>
+            ...
+        volumeMounts: <4>
+            ...
+    volumes: <5>
+        ...
+----
+<.> The *Pod* security constraints,
+<.> The *container* security contrains,
+<.> The affected resources to the container,
+<.> The external (from the container image) volume mount points,
+<.> The definition of the volume (external filesystem - from the container standpoint) the containers can reference in their `volumeMounts`.
+
+TIP: in real life you never define a `Pod` but this is the level we need in this post.
+
+Most constraints come from the security contexts.
+
+The container security context mainly defines the security within one container: what is the active user/group of the container, can it be root (user `0:0`), does it have access to some host capabilities etc...
+In short it defines if your container can corrupt the host and therefore other containers as well as its own environment (filesystem for example).
+
+[source,json]
+----
+securityContext:
+  allowPrivilegeEscalation: [true|false],
+  capabilities:
+    add: []
+    drop: []
+  priviledged: [true|false]
+  procMount: <string>
+  readOnlyRootFilesystem: [true|false]
+  runAsUser: 1234
+  runAsGroup: 1234
+  runAsNonRoot: [true|false]
+  seLinuxOptions: {}
+  seccompProfile:
+    type: RuntimeDefault
+    ...
+----
+
+The pod security context overlap on some aspects with container security but also defines some specific security - mainly for what is shared between pod containers like filesystem permissions:
+
+[source,json]
+----
+securityContext:
+  appArmorProfile: {}
+  fsGroup: 1234
+  fsGroupChangePolicy: OnRootMismatch
+  runAsNonRoot: [true|false]
+  runAsUser: 1234
+  seLinuxOptions: {}
+  seccompProfile: {}
+  supplementalGroups: [4567]
+  sysctls: []
+----
+
+Here again some host features are enabled or not (`sysctls` is a common suspicious one) but the filesystem is also setup (`fsGroup` to define the group of the filesystem mounted from a `PersistentVolume(Claim)` for example) and the very important `fsGroupChangePolicy` to ensure that if the `PersistentVolume` differs from the expectation (`fsGroup`), it is aligned by Kubernetes (`kubelet`) to make it functional for the container.
+
+TIP: if you need the JSON schema of the descriptors, you can either use Kubernetes OpenAPI endpoint or Yupiik Bundlebee publish schemas available on link:https://github.com/yupiik/bundlebee/blob/gh-pages/generated/kubernetes/jsonschema/v1.30.1/[Github] or link:https://www.yupiik.io/bundlebee/[BundleBee] website (link:https://www.yupiik.io/bundlebee/generated/kubernetes/jsonschema/v1.30.1/Pod.jsonschema.json[Pod.jsonschema.json] for example).
+
+IMPORTANT: the security is not only limited `securityContext` sections in the descriptors, using `latest` tag of an image can also be an issue for example.
+
+When you setup the security in your descriptors you have multiple options, one is to configure everything - which is very complicated to do and maintain, another one is to do it iteratively, but the likely most efficient way is to use a linter/validator of descriptor.
+Most are very easy to integrate with Helm, BundleBee or plain descriptors.
+
+The most known linters are:
+
+* link:https://docs.kubelinter.io/#/[kube-linter],
+* link:https://www.yupiik.io/bundlebee/commands/lint.configuration.html[BundleBee] lint command,
+* link:https://kyverno.io/docs/kyverno-cli/[Kyverno] can be used for that even if it is more server oriented.
+
+As most of the time you can fine more (like `kube-lint`, `datree` etc...).
+
+Once validated, you will often end up with the same kind of security context definition:
+
+[source,yaml]
+----
+podSecurityContext: # "securityContext" at pod level
+  fsGroup: 1001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext: # "securityContext" at container level
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1001
+  allowPrivilegeEscalation: false
+----
+
+NOTE: `1001` is arbitrary, we just want to avoid <= 1000 which are commonly used for specific needs on linux and 0 which means root (all permissions).
+
+== Impact on .NET applications
+
+And here starts the issues. Several applications will run like that without any issue, some others will just fail at startup and others at runtime.
+
+=== Persistence case
+
+The first thing to ensure if you are using some volume is that the `fsGroup` is compatible with your user/user group and depending your volume provisioner (or manual `PersistentVolume` definition) you can need to tune `fsGroupChangePolicy` to ensure the permissions are aligned and you don't need to `chmod` the volume manually on the host.
+
+=== Native calls
+
+This part depends a lot of your application and worse, the third parties you are using.
+But some libraries will do some call which require some OS permissions.
+There are two main toggles there: `sysctls` which enables to access to kernel parameters and link:https://man7.org/linux/man-pages/man7/capabilities.7.html[capabilities,window=_blank] which enables to allow/forbids linux permissions (`setcap` features more or less) - note that I'll ignore `appArmor` which is not yet common in Kubernetes.
+
+An example to enable to set the system time, you would do:
+
+[source,yaml]
+----
+capabilities:
+  add:
+    - SYS_TIME
+----
+
+=== Temporary files
+
+On linux, `/tmp` is used to create temporary files.
+
+But with our previous linting we set `readOnlyRootFilesystem: true` so we make the whole container filesystem (the image one, not the mounted volumes) read only....including `/tmp`.
+
+To solve this one there are two main options:
+
+* Mount a volume on `/tmp` - can be an `emptyDir`,
+* Change temporary directory using `TMPDIR` environment variable.
+
+The first option will look like:
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+spec:
+    containers:
+      - name: app
+          image: oci.myregistry.com/myapp:1.2.3
+        volumeMounts:
+          - mountPath: /tmp
+            name: tmp
+          ...
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi
+    ...
+----
+
+The last option can look simpler but still need a volume - it is useful when you already have a volume, you can configure `TMPDIR` to `/path/to/mounted/volume/tmp` for example:
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+spec:
+    containers:
+      - name: app
+          image: oci.myregistry.com/myapp:1.2.3
+        env:
+          - name: TMPDIR
+            value: /writable/path
+        volumeMounts:
+          - mountPath: /writable/path
+            name: tmp
+        ...
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi
+----
+
+=== Other temporary files
+
+A big surprise can come from shared file in .NET ecosystem.
+It is all things related to filesystem locking like mutex for example.
+
+On linux - so 99.9% of Kubernetes clusters - you will endup using this constant defined in C++ code of the dotnet runtime:
+
+[source,cpp]
+----
+#define TEMP_DIRECTORY_PATH "/tmp/"
+----
+
+So there is no way to override `/tmp` in .NET runtime (at least in v8/v9 versions) if you are using shared files/named locks.
+
+Of course, the previous trick works well, ie if you are mounting `/tmp` on an `emptyDir` volume it will work.
+
+=== Resources
+
+Dotnet is able to read cgroups files (v1 and v2) so if you define requests/limits on your containers in `resources` block it will be respected if `DOTNET_RUNNING_IN_CONTAINER` is set to `true`.
+This is generally the case of `dotnet/runtime` images but if you go with AOT, custom base images and/or `dotnet publish /t:PublishContainer` you can loose that environment variable in some cases.
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+spec:
+    containers:
+      - name: app
+          image: oci.myregistry.com/myapp:1.2.3
+        env:
+          - name: DOTNET_RUNNING_IN_CONTAINER
+            value: "true"
+----
+
+=== What about the SDK
+
+It can happen you run the SDK in a harnessed container - it is not recommended but it can.
+
+Here you will likely need more environment variables as well as the previous `/tmp` hack - because the first time the SDK it will use a mutex so `/tmp` directory.
+
+The common environment variable set will look like:
+
+[source,yaml]
+----
+env:
+  # home for the `dotnet` SDK CLI
+  - name: DOTNET_CLI_HOME
+    value: /mnt/testing-tools/work/dotnet
+  # disable telemetry (microsoft metrics)
+  - name: DOTNET_CLI_TELEMETRY_OPTOUT
+    value: "true"
+  # no banner when calling the cli the first time
+  - name: DOTNET_NOLOGO
+    value: "true"
+  # no integrity check - docker image check is sufficient
+  - name: DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK
+    value: "true"
+  # for nuget migration which is ran the first time and can't be disabled, ensure the directory is writable
+  - name: XDG_DATA_HOME
+    value: /mnt/work/xdg
+  - name: TMPDIR
+    value: /mnt/work/tmp
+  # simulate a "common" CI (dotnet CLI does some auto config with that, it is redundant with previous cases for now but not bad to flag it)
+  - name: CI
+    value: "true"
+----
+
+== Conclusion
+
+The .NET within Kubernetes journey is quite smooth:
+
+* You can build (and push) OCI images without docker or podman since it is built-in in the dotnet SDK CLI,
+* Dotnet runtime supports CGroups autoconfiguration so resources are auto-configured and respect Kubernetes requirements.
+
+However, there are still a few pitfalls like switching the default user to a controlled one, aligning filesystem permissions and the most vicious one, ensuring `/tmp` is writable within containers if you use mutex or related API.
+
+But long story short, .NET runs very well within Kubernetes, let's just hope they use the same `TMPDIR` variable than for `Path.GetTempPath()` for mutex code in v10.
