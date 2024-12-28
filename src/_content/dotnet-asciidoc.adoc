@@ -1,0 +1,143 @@
+= .NET and Asciidoc
+:published-on: 20241228
+:archive-date: 2024
+:summary: Markdown tends to be the documentation standard, however it still has multiple pitfalls compared to asciidoc, let see how to integrate Asciidoc within a .NET application.
+:view: post.single
+:tags: .NET, Documentation, Writing, Asciidoc
+:post-image: /img/posts/dotnet-asciidoc.png
+include::_metadata/authors/rmannibucau.attributes.adoc[]
+
+[abstract]
+Some years ago, link:https://asciidoctor.org/[Asciidoctor,window="_blank"] launches a documentation revolution bringing the power of link:https://www.latex-project.org/[LaTeX,window="_blank"] with the simplicity of link:https://www.markdownguide.org/[Markdown,window="_blank"].
+High level the idea was to make a wiki like syntax very powerful and extensible.
+Let see what it means in .NET land.
+
+== Why not Markdown?
+
+Markdown is great when you write simple content but as soon as you start writing serious content (documentations, blog sites, ...) you hit the fact that every implementation has a custom link:https://www.markdownguide.org/getting-started/#flavors-of-markdown[flavor,window="_blank"] of markdown, in other words, there is no "markdown" there are "markdown*s*".
+
+The link:https://www.markdownguide.org/basic-syntax/[basic] syntax - original one - is quite portable but it is limited to titles, paragraphs, line breaks, bold/italic formatting, quotes, lists (ordered or not), simple code blocks (no language), images, links.
+
+Some important lacks are - _for example_ - tables, definition lists, admonitions (warnings, tips, notes, ...) and more.
+
+This is why link:https://github.github.com/gfm/[Github,window="_blank"] uses an extended Markdown markup, that link:https://commonmark.org/[CommonMark,window="_blank"] and others were created: to add what was missing to be complete to raw Markdown and make it usable.
+
+The main issue is that it is difficult to:
+
+. Create some knowledge sharing between people in this context since depending what solution you work on you learn something different,
+. Create some transversal tooling working on all implementations (linting for example to guarantee the quality of the writing format).
+
+For that reason using asciidoc which defines more generally an unified syntax is generally more relevant even if as soon as you start using implementation you always have a few glitches but you don't start by glitches and implementations tend to fix issues so you will be able to get knowledge sharing and pipeline automotion which are worth it a lot.
+
+== Asciidoctor: one code to rule them all?
+
+Asciidoctor is a ruby project.
+It aimes at implementing link:https://asciidoc.org/[Asciidoc,window="_blank"] markup (which was originally implemented in python).
+
+A few specificities of Asciidoctor were to push to make the syntax more efficient but also to use portability of ruby code base to make the implementation available for multiple lanaguages.
+This is how Javascript got Asciidoctor (thanks link:https://opalrb.com/[Opal,window="_blank"]) and Java got Asciidoctor using link:https://www.jruby.org/[JRuby,window="_blank"].
+
+The issue is that the ruby support accross languages is not that spread and is acually slow in most languages (in particular JRuby is a great runtime but a poor solution for fast rendering since the interpreter and warmup time are not that fast so Java community was not that happy about that solution).
+The other issue making it "portable" is that you need to embrace the stack of the "portability" layer, it all dependencies of JRuby for example for Java case and it is way more than what you expect.
+
+So while this enabled people to start to do Asciidoc everywhere, it still had some issues and .NET was ont even enabled.
+
+== NAsciidoc
+
+link:https://rmannibucau.github.io/NAsciidoc/[NAsciidoc,window="_blank"] is the .NET conversion of Yupiik link:https://www.yupiik.io/tools-maven-plugin/asciidoc-java.html[Asciidoc-java,window="_blank"] bundle which was a reimplementation from scratch of an Asciidoc(tor) parser and renderer (HTML - almost - compatible, ie you can reuse the CSS if you want).
+
+It is .NET native and doesn't suffer from having to integrate with native libraries (it is "dotnet portable") or OS dependencies.
+
+NOTE: there is another .NET native implementation (link:https://github.com/russcam/asciidocnet[Asciidocnet,window="_blank"] but it doesn't seem maintained nor evolving). The design of Asciidocnet is closer to link:https://github.com/xoofx/markdig[Markdig,window="_blank"] and really more structured than NAsciidoc which is more oriented to be easy and not rigid to make evolving (but is less "architectured"). Don't get it wrong, Asciidocnet is not in the category "Premature Abstraction is the Root of All Evil" but integrating a new feature in the code base requires more understanding of the overall design so can be harder for occasional contributors.
+
+In terms of usage there are three main area in the core bundle/nuget (`NAsciidoc.Core`):
+
+* The AST model: it enables you to have in memory the whole document (the title, the lists, the paragraphs, etc...),
+* The parser: it enables to load the model (often a `Document` or `Body` when used as partial rendering),
+* The renderers: here the design was to have a visitor of the AST model to enable to change the renderer by plain decoration which avoids to have extension point for all potential cases (which are all the elements of the AST + the combinations of their attributes....it is a lot since it is infinite).
+
+A sample usage will look like:
+
+[source,cs]
+----
+var parser = new Parser(); <1>
+
+var context = new ParserContext(new LocalContentResolver("path/to/workspace")); <2>
+var doc = parser.Parse( <3>
+  """
+    = My Adoc
+
+    With some content.
+    """,
+  context
+);
+
+var conf = new AsciidoctorLikeHtmlRenderer.Configuration(); <4>
+var renderer = new AsciidoctorLikeHtmlRenderer(conf); <5>
+renderer.Visit(doc); <6>
+var html = renderer.Result(); <7>
+----
+<.> Create a parser, it is a thread safe instance you can reuse,
+<.> Create a parser context, it enables to resolve includes and potentially some parse time attributes,
+<.> Load the AST model in memory by parsing some content,
+<.> Create a renderer configuration (depends the renderer/visitor you want to use, the sample uses Asciidoctor compatible one) - take care to pass the configuration you need if any like the rendering attributes etc..,
+<.> Instantiate your renderer,
+<.> Visit the document to do the actual rendering,
+<.> And finally get the rendered result.
+
+TIP: this implementation is full in memory but you can also use a streaming one for cases you want to limit the memory usage (but it is quite rare in practise).
+
+=== Strength of this model
+
+The strength of this model is that you use this pipeline: write → load → render.
+
+It means you can easily convert it to: write → load → modify the model → render.
+
+And also: write → load → custom rendering.
+
+The most advanced pipeline - you can set up on Github Action or any CI - will likely be:
+write → load → modify the model → validate/lint the model → custom rendering*s* (HTML, PDF, ebook, ...).    
+
+
+=== Custom rendering
+
+The decorator pattern for the rendering is likely the most powerful, for example if I want a standard asciidoctor renderer but with Twitter Bootstrap _alter_ blocks for admonitions, i can just extend or decorate (decoration is "cleaner" in terms of implementation, extending the base renderer is less verbose) the default visitor and override the admonition visitor:
+
+[source,cs]
+----
+public class BootstrapRender(AsciidoctorLikeHtmlRenderer.Configuration configuration)
+    : AsciidoctorLikeHtmlRenderer(configuration)
+{
+    public override void VisitAdmonition(Admonition element)
+    {
+        string name = Enum.GetName(element.Level)!;
+        builder.Append(
+            Div(
+                role: "alert",
+                className: "alert alert-" + element.Level switch
+                {
+                    Admonition.AdmonitionLevel.Note => "info",
+                    Admonition.AdmonitionLevel.Tip => "success",
+                    Admonition.AdmonitionLevel.Important => "primary",
+                    Admonition.AdmonitionLevel.Warning => "warning",
+                    Admonition.AdmonitionLevel.Caution => "danger",
+                    _ => "secondary"
+                },
+                children: [
+                    H4(className: "alert-heading", children: B($"{char.ToUpperInvariant(name[0])}{name[1..]}")),
+                    RenderChildren(element.Content)
+                ]
+            ));
+    }
+}
+----
+
+NOTE: in a default NAsciidoc implementation you would append on `builder` raw HTML and `RenderChildren(element.Content)` would be replaced by `VisitElement(element.Content);` but this enables to show you can use any HTML rendering library you want in a renderer/visitor and integrate with any UI library you need.
+
+== Conclusion
+
+Documentation the code we write is likely more important than writing any code, but being able to work on the documentation on the long run and sharing work with others is as important.
+
+In that context, asciidoc tends to be the best compromise since it couples the simplicity of a markup language with the power and extensibility of the more advanced languages related to writings (documentations, books, blogs, ...).
+
+And by the way, this blog is powered by link:https://github.com/rmannibucau/SBSharp[SBSharp,window="_blank"] which is backed by NAsciidoc and a Github Action to publish updates.
