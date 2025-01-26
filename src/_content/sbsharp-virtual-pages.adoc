@@ -1,5 +1,5 @@
 = SBSharp Virtual Pages
-:published-on: 20250226
+:published-on: 20250126
 :archive-date: 2025
 :summary: link:https://rmannibucau.github.io/SBSharp/how-it-works.html[SBSharp,window=_blank] enables to generate a static website using .NET/C# based templating. One advanced feature is to generate _virtual pages_, i.e. pages which are not materialized until the rendering. Let's deep dive into this concept.
 :view: post.single
@@ -9,11 +9,11 @@ include::_metadata/authors/rmannibucau.attributes.adoc[]
 
 [abstract]
 --
-Static site generation is overall a simple process which relies on three main steps:
+Static site generation is overall a simple process which relies on three main pillars:
 
 * Defining content (literally the text/assets you will render),
 * Defining views (how the raw text is converted to user facing HTML),
-* (optional) Defining extensions (how some part of the website are rendered in a specific manner - OpenAPI/SwaggerUI, etc...).
+* (optional but very useful) Defining extensions (how some part of the website are rendered in a specific manner - OpenAPI/SwaggerUI, etc...).
 
 However, there is one particular kind of rendered views which can be challenging depending the kind of generator you use: the virtual pages.
 --
