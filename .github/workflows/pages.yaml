@@ -33,6 +33,8 @@ jobs:
       - run: cd src/_build; for module in flexsearch highlight; do cd $module && npm i && cd -; done
       - run: dotnet tool install --global SBSharp.Launcher --version 0.0.32
       - run: sbsharp build
+        env:
+          DOTNET_ROLL_FORWARD: Major
       # upload to github-pages the content
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
