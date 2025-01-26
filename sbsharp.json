@@ -1,5 +1,8 @@
 {
     "sbsharp": {
+        "Build": {
+            "RazorLocalCache": ".cache"
+        },
         "Input": {
             "Location": "src/_content",
             "Sources": {

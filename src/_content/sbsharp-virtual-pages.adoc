@@ -1,0 +1,176 @@
+= SBSharp Virtual Pages
+:published-on: 20250226
+:archive-date: 2025
+:summary: link:https://rmannibucau.github.io/SBSharp/how-it-works.html[SBSharp,window=_blank] enables to generate a static website using .NET/C# based templating. One advanced feature is to generate _virtual pages_, i.e. pages which are not materialized until the rendering. Let's deep dive into this concept.
+:view: post.single
+:tags: .NET, Static site generation, SBSharp
+:post-image: /img/posts/sbsharp-virtual-pages.png
+include::_metadata/authors/rmannibucau.attributes.adoc[]
+
+[abstract]
+--
+Static site generation is overall a simple process which relies on three main steps:
+
+* Defining content (literally the text/assets you will render),
+* Defining views (how the raw text is converted to user facing HTML),
+* (optional) Defining extensions (how some part of the website are rendered in a specific manner - OpenAPI/SwaggerUI, etc...).
+
+However, there is one particular kind of rendered views which can be challenging depending the kind of generator you use: the virtual pages.
+--
+
+== Virtual Pages?
+
+Virtual pages are virtual on the source side, i.e. there is no `.md` or `.adoc` but you end up with a `.html` in the output.
+
+The common workaround for these pages are to create an empty source file just referencing a custom view.
+
+While this workaround is great for simple pages like tags related pages for example, there are two challenges which can not work:
+
+* These pages often need all pages (with actual source file) metadata. For example to create a list of tags page you need to have all tags of all pages, if your generator is not able to collect it upfront and provide it to you it can be hard to do without a preprocessing step,
+* These pages can need to be paginated - list of posts per author or category, for example, in a blog.
+
+== SBSharp and Virtual Pages
+
+link:https://rmannibucau.github.io/SBSharp/how-it-works.html[SBSharp,window=_blank], the static site generator behind this blog, uses virtual pages.
+
+For example all the paginated pages are virtual pages (for example the list of posts I wrote - link:/blog/author/rmannibucau/1.html[rmannibucau/1.html,window=_blank]).
+
+What is specific to SBSharp is that any page has the list of all pages (with source) of the site so no need to collect anything while rendering pages with a physical source (`.adoc` for SBSharp) or reprocess all pages.
+
+TIP: the nice side effect of that if you can easily generate menus on all pages without pre/post-processing steps or injection of the navigation content.
+
+Thanks to this model, SBSharp enables to create virtual pages 100% by configuration.
+
+The (pseudo) model passed to a view in SBSharp is the following one:
+
+[source,cs]
+----
+class Document {
+  IElement Title;
+  IElement Body;
+  IDictionary<string,string> Options;
+}
+class Page {
+    string View; // view name
+    Document Page; // asciidoc model
+    string Slug;
+    Func<string> Body; // body renderer - lazy thanks Func
+    IEnumerable<Page> Pages; // all pages
+}
+----
+
+Here is how it looks like in  `sbsharp.json` to generate the index of post per author:
+
+[source,json]
+----
+{
+    "sbsharp": {
+        "Input": {
+            // ...
+            "VirtualPages": [
+                {
+                    "Slug": "blog/author/{Value}/{Page}", <1>
+                    "Title": "Posts of {Value}, page {Page}", <2>
+                    "View": "post.index", <3>
+                    "Paginated": true, <4>
+                    "PerValue": true, <5>
+                    "CriteriaAttribute": "author", <6>
+                    "OrderByAttribute": "published-on", <7>
+                    "ReverseOrderBy": true <8>
+                },
+                // ...
+            ]
+        }
+    }
+}
+----
+<.> The _slug_ represents the url of the page without its `.html` extension, for example, the first generated page will be `blog/author/rmannibucau/1.html` with this configuration,
+<.> The _title_ is literally the page title, simulating a `h1` in HTML or `= xxx` in asciidoc,
+<.> The _view_ is the name of the view to use for the rendering which is where the logic will sit to handle specifically the model virtually created which is equivalent to an empty `.adoc` document with a title BUT with only the chunk of selected pages as  ̀Pages` property,
+<.> _paginated_ enables to know if the list of pages will be paginated, it works with the other _PageSize_ parameter - implicit in this snippet - which enables to control the number of items to keep per page. It will also inject specific attributes to the virtual page like `paginationTotalPages` and `paginationCurrentPage` which enable to have the pagination context computed by the generator and `paginationAttributeValue` which enables to know which attribute was used - if configured,
+<.> _perValue_ enables to create a pagination suite per criteria attribute value (per `author` here),
+<.> _criteriaAttribute_ enables to filter and select pages based on a document attribute (here the `author` name),
+<.> _orderByAttribute_ enables to sort the resulting pages based on a document attribute,
+<.> and _reverseOrderBy_ enables to reverse the natural order (you want latest posts first here).
+
+With this configuration, it is easy to write a custom view (`post.index` there) which will create the page.
+
+This page can inherit a global theme/layout:
+
+
+[source,cs]
+----
+@{
+    Layout = "_Layout";
+}
+----
+
+It can extract the virtual page title
+
+[source,html]
+----
+<p>@Model.Document.Header.Title</p>
+----
+
+Extract the criteria attribute value (if relevant):
+
+[source,html]
+----
+Model.Document.Header.Attributes.TryGetValue("paginationAttributeValue", out string val)
+----
+
+Check if there is any selected page (which means you can show a message "No post found" for example):
+
+[source,html]
+----
+@if (Model.Context.Pages.Count == 0)
+{
+    <div>No post found.</div>
+}
+----
+
+And, of course, generate the index based on the selected pages metadata:
+
+[source,html]
+----
+@foreach (var post in Model.Context.Pages)
+{
+  <article>
+    <h5>
+      <a href="/@(post.Slug).html">@post.Document.Header.Title</a>
+    </h5>
+    <div>@post.PublishedOn</div>
+  </article>
+}
+----
+
+Finally, since it has the pagination metadata it can generate the pagination navigation bar as needed:
+
+[source,html]
+----
+
+@{
+    int totalPages = int.Parse(
+      Model.Document.Header.Attributes
+        .TryGetValue("paginationTotalPages", out string tp) ?
+        tp : "0");
+    int currentPage = int.Parse(
+      Model.Document.Header.Attributes
+        .TryGetValue("paginationCurrentPage", out string cp) ?
+        cp : "0");
+}
+@if (totalPages > 0)
+{
+    <Pagination count={@paginationTotalPages} defaultPage={@currentPage} boundaryCount={2} />
+}
+----
+
+NOTE: for simplicity and readability this last one was done using a react component but you can implement it in full HTML as done for this blog, it is just more verbose - I recommend you to use a partial (include in Razor land) which helps to keep it readable.
+
+== Conclusion
+
+There are ton of static site generators but SBSharp role is literally just to load properly Asciidoc models and associate them to Razor(Light) views which makes it very powerful and natural for any .NET developer.
+
+Thanks to its generic model, it can rely on virtual pages making it easier to create boilerplate pages without an increased maintenance and multiple steps.
+
+Do not hesitate to have a look to link:https://github.com/rmannibucau/SBSharp[SBSharp,window=_blank] on Github and submit a pull request if you need some enhancement.

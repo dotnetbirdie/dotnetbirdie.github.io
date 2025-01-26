@@ -3,3 +3,6 @@ _site
 *generated*
 node_modules
 .vscode
+.cache
+.idea
+*.iml
